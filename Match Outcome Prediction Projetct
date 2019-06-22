@@ -1,0 +1,167 @@
+#importando as bibliotecas
+
+import sqlite3
+import pandas as pd
+import numpy as np
+import seaborn as sns
+#import iterpools
+import matplotlib.pyplot as plt
+from sklearn.ensemble import GradientBoostingClassifier
+from sklearn.ensemble import AdaBoostClassifier
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.naive_bayes import GaussianNB
+from sklearn.neighbors import KNeighborsClassifier
+from sklearn import linear_model
+from sklearn.metrics import confusion_matrix
+from sklearn.metrics import classification_report, accuracy_score
+from sklearn.calibration import CalibratedClassifierCV
+from sklearn import model_selection
+from sklearn.model_selection import train_test_split
+from sklearn.metrics import make_scorer
+from time import time
+from sklearn.decomposition import PCA, FastICA
+from sklearn.pipeline import Pipeline
+import warnings
+warnings.simplefilter("ignore")
+
+
+#carregar as funções
+def get_match_label(match):
+    
+    #definir as variaveis
+    home_goals = match['home_team_goal']
+    away_goals = match['away_team_goal']
+    
+    label = pd.DataFrame()
+    label.loc[0,'match_api_id'] = match ['match_api_id']
+    
+    #identificar quem ganhou
+    if home_goals > away_goals:
+        label.loc[0,'label'] = "Win"
+        
+    if home_goals == away_goals:
+        label.loc[0,'label'] = "Draw"
+    
+    if home_goals < away_goals:
+        label.loc[0,'label'] = "Defeat"
+    
+#retorna a partida
+return label.loc[0]
+
+def get_fifa_stats(match, player_stats):
+    #agregar estatisticas para a partida
+    
+    #definir as variaveis
+    match_id = match.match_api_id
+    date = match['date']
+    players = ['home_player_1', 'home_player_2','home_player_3','home_player_4','home_player_5','home_player_6','home_player_7',
+              'home_player_8','home_player_9','home_player_10','home_player_11', 'away_player_1','away_player_2','away_player_3',
+              'away_player_4','away_player_5','away_player_6','away_player_7','away_player_8','away_player_9','away_player_10',
+              'away_player_11']
+    player_stats_new = pd.DataFrame()
+    names = []
+    
+    #loop através dos jogadores
+    for player in players:
+    
+        #ID do jogador
+        player_id = match[player]
+    
+        #Estatistica do jogador
+        stats = player_stats[player_stats.player_api_id == player_id]
+    
+        #Identificar as estatísticas atuais
+        current_stats = stats[stats.date < date].sort_values(by = 'date', ascending = False)[:1]
+        
+    if np.isnan(player_id) == True:
+        overral_rating = pd.Series(0)
+        
+    else:
+        current_stats.reset_index(inplace = True, drop = True)
+        overall_rating = pd.Series(current_stats.loc[0, "overral_rating"])
+        
+        #renomear as estatisticas
+        name = "{}_overall_rating".format (player)
+        names.append (name)
+        
+        #agregando as estatisticas
+        player_stats_new = pd.concat([player_stats_new, overral_rating], axis = 1)
+        
+    player_stats_new.columns = names
+    player_stats_new['match_api_id'] = match_id
+    
+    player_stats_new.reset_index(inplace=True, drop = True)
+    
+    #retorna a estatistica dos jogadores
+    return player_stats_new.ix[0]
+
+def get_fifa_data(matches, player_stats, path = None, data_exists = False):
+    #coletando os dados das partidas
+    
+    #checar se os dados da fifa realmente existe
+    if data_exists == True:
+        
+        fifa_data = pd.read_pickle(path)
+        
+    else:
+        
+        print("Coletando os dados da fifa de cada partida...")
+        start = time()
+        
+        #aplicar 
+        fifa_data = matches.apply(lambda x :get_fifa_stats(x, player_stats), axis = 1)
+        
+        end = time()
+        print("dados da Fifa coletada in {:.1f} minutes".format((end - start)/60))
+    
+#retorna a data fifa
+return fifa_data
+
+def get_overall_fifa_rankings (fifa, get_overall = False):
+    #notas da fifa através dos dados
+    
+    temp_data = fifa
+    
+    #verificar se apenas as estatisticas dos jogadores são desejadas
+    
+    if get_overall == True:
+        
+        #obtendo as estatísticas gerais
+        data = temp_data.loc[:,(fifa.columns.str.contains('overall_rating'))]
+        data.loc[:,'match_api_id'] = temp_data.loc[:,'match_api_id']
+    
+    else:
+        
+        #obtendo todas estatisticas exceto a estatisticas da data
+        cols = fifa.loc [:,(fifa.columns.str.contains('date_stat'))]
+        temp_data = fifa.drop(cols.columns, axis = 1)
+        data = temp_data
+    
+#retorna os dados
+return data
+
+def get_last_matches_against_eachother(matches, date, home_team, away_team, x = 10):
+    #retorna os ultimos "x" confronto de uma só equipe
+    
+    #filtrar partida por partida
+    team_matches = matches[(matches['home_team_api_id'] == team)  |  (matches['away_team_api_id'] == team)]
+    
+    #filtrar "x" partidas do time
+    last_matches = team_matches[team_matches.date < date].sort_values(by= 'date', ascending = False).iloc[0:x,:]
+    
+#retorna as ultimas partidas
+return last_matches
+
+def get_last_matches_against_eachother(matches, date, home_team, away_team, x = 10):
+    #retorna as ultimas "x" partidas de outros dois times
+    
+    #filtrar a partida por partida
+    team_matches = matches[(matches['home_team_api_id'] == team ) | (matches['awat_team_api_id'] == team)]
+    
+    #filtrar x ultimas partidas dos times
+    last_matches = team_matches[team_matches.date < date].sort_values(by = 'date', ascending = False).iloc[:,x,:]
+    
+#retorna os dados
+return last_matches
+    
+
